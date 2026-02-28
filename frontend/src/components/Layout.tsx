@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ModeToggle } from "@/components/mode-toggle";
 
 const navItems = [
   { to: "/dashboard",       label: "Live Dashboard",    icon: LayoutDashboard },
@@ -77,16 +78,23 @@ export default function Layout() {
         {/* Footer */}
         <div className="p-3 space-y-2">
           <div className="flex items-center gap-2 px-1">
-            <Tooltip>
-              <TooltipTrigger>
-                {wsConnected ? (
-                  <Wifi className="h-4 w-4 text-green-500" />
-                ) : (
-                  <WifiOff className="h-4 w-4 text-red-500" />
-                )}
-              </TooltipTrigger>
-              <TooltipContent>{wsConnected ? "Live connected" : "Disconnected"}</TooltipContent>
-            </Tooltip>
+            <ModeToggle />
+            <div className="flex-1 min-w-0 flex items-center justify-end">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center justify-center p-1 cursor-help">
+                    {wsConnected ? (
+                      <Wifi className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <WifiOff className="h-4 w-4 text-red-500" />
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>{wsConnected ? "Live connected" : "Disconnected"}</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 px-1">
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium truncate">{user?.full_name ?? user?.username}</p>
               <p className="text-xs text-muted-foreground capitalize">{user?.role}</p>
@@ -97,7 +105,7 @@ export default function Layout() {
               </AvatarFallback>
             </Avatar>
           </div>
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground" onClick={logout}>
+          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground hover:bg-destructive hover:text-destructive-foreground" onClick={logout}>
             <LogOut className="h-4 w-4" /> Sign out
           </Button>
         </div>

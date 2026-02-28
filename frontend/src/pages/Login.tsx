@@ -27,8 +27,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
-      <Card className="w-full max-w-sm shadow-2xl">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background Image */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: 'url("/assets/parking-bg.jpg")',
+          transform: 'scale(1.05)'
+        }}
+      />
+      {/* Blur Overlay */}
+      <div className="absolute inset-0 bg-background/60 z-0" />
+      
+      <Card className="w-full max-w-sm shadow-2xl relative z-10 border-muted">
         <CardHeader className="text-center space-y-2">
           <div className="flex justify-center">
             <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">

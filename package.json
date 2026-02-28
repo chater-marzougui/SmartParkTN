@@ -1,16 +1,40 @@
 {
   "name": "smartparktn",
   "version": "1.0.0",
-  "description": "Starter for all apps in current project",
+  "description": "TunisPark AI — Smart Tunisian Parking Management System",
   "main": "index.js",
   "scripts": {
-    "start:backend": "cd backend && venv\\Scripts\\activate && uvicorn main:app",
-    "start:frontend": "cd frontend && npm start",
-    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
-    "install:backend": "cd backend && python -m venv venv && venv\\Scripts\\activate && pip install -r requirements.txt",
-    "install:frontend": "cd frontend && npm install",
-    "install": "npm run install:backend && npm run install:frontend"
+    "// ── DEV ────────────────────────────────────────────────": "",
+    "dev:backend": "cd backend && venv\\Scripts\\python.exe -m uvicorn app.main:socket_app --reload --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
 
+    "// ── INFRA ───────────────────────────────────────────────": "",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:reset": "docker compose down -v && docker compose up -d",
+    "infra:logs": "docker compose logs -f",
+
+    "// ── DB ─────────────────────────────────────────────────": "",
+    "db:migrate": "cd backend && venv\\Scripts\\python.exe -m alembic upgrade head",
+    "db:rollback": "cd backend && venv\\Scripts\\python.exe -m alembic downgrade -1",
+    "db:seed": "cd backend && venv\\Scripts\\python.exe init_admin.py",
+    "db:seed:reset": "cd backend && venv\\Scripts\\python.exe init_admin.py --reset",
+    "db:users": "cd backend && venv\\Scripts\\python.exe init_admin.py --list",
+
+    "// ── BUILD ───────────────────────────────────────────────": "",
+    "build:frontend": "cd frontend && npm run build",
+    "build:frontend:preview": "cd frontend && npm run build && npm run preview",
+
+    "// ── SETUP ───────────────────────────────────────────────": "",
+    "setup": "npm run setup:frontend && npm run infra:up && npm run db:migrate && npm run db:seed",
+    "setup:frontend": "cd frontend && npm install",
+    "setup:backend": "cd backend && pip install -r requirements.txt",
+
+    "// ── RAG ─────────────────────────────────────────────────": "",
+    "rag:embed": "cd backend && venv\\Scripts\\python.exe -m app.ai.embedder",
+
+    "// ── LINT ────────────────────────────────────────────────": "",
+    "lint": "cd frontend && npm run lint"
   },
   "repository": {
     "type": "git",
@@ -23,3 +47,4 @@
   },
   "homepage": "https://github.com/chater-marzougui/SmartParkTN#readme"
 }
+
