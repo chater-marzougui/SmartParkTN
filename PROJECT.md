@@ -6,6 +6,14 @@
 > **Contact:** taoufik.benabdallah@iit.ens.tn  
 > **Deliverables:** Prototype · Video Demo · Script
 
+> **Implementation note (Feb 2026):** Backend, frontend, and infrastructure are fully built.
+> See [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md) for live status.
+> Key deviations from this blueprint:
+> - OCR: **EasyOCR** (Arabic + English) instead of custom CRNN/TrOCR
+> - LLM: **Ollama/Mistral** running locally (no API cost)
+> - Infra: **No nginx** — backend and frontend run locally; only postgres + redis are containerised
+> - Tracking: **DeepSORT** via `deep-sort-realtime` library
+
 ---
 
 ## Table of Contents

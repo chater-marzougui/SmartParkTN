@@ -4,6 +4,10 @@
 > This document explains **what the system does and why** at the business logic level.  
 > Use it to explain the project to supervisors, teammates, or judges before the demo.
 
+> **Implementation note (Feb 2026):** The schema described here is fully implemented in
+> `backend/app/models/`. All 8 tables are created via Alembic migrations.
+> See [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md) for live status.
+
 ---
 
 ## Table of Contents

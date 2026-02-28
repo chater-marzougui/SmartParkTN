@@ -1,6 +1,12 @@
 """Alembic environment configuration."""
 import os
 from logging.config import fileConfig
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load backend/.env so DATABASE_URL is available without setting it manually
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from sqlalchemy import create_engine, pool
 from alembic import context

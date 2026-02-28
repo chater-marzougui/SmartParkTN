@@ -2,88 +2,96 @@
 
 > AI-powered Tunisian parking management: YOLOv8 plate detection · EasyOCR · RAG AI assistant · Real-time dashboard
 
+**Competition:** Institut International de Technologie / NAU — Prize: 500 TND + PFE Stage
+
 ---
 
 ## Architecture
 
 ```
 SmartParkTN/
-├── frontend/          React 19 + Vite + shadcn/ui dashboard
-├── backend/           FastAPI + SQLAlchemy + LangChain RAG API
+├── frontend/          React 19 + Vite + TypeScript + shadcn/ui dashboard
+├── backend/           FastAPI + SQLAlchemy 2.0 + LangChain RAG API
 ├── vision/            YOLOv8 · EasyOCR · DeepSORT pipeline
 ├── training/          Detector & OCR training scripts
-├── knowledge_base/    PDF parking regulations (used by RAG)
-└── docker-compose.yml Full-stack orchestration
+├── knowledge_base/    PDF parking regulations (RAG source)
+└── docker-compose.yml PostgreSQL + Redis only (everything else runs locally)
 ```
 
 ---
 
-## Quick Start (Docker)
+## Quick Start
 
+### 1. Start infrastructure (PostgreSQL + Redis)
 ```bash
-# 1. Clone and enter the project
-cd SmartParkTN
-
-# 2. Copy and configure env files
-cp .env .env.local          # edit POSTGRES_PASSWORD, SECRET_KEY
-
-# 3. Pull & build all services
-docker compose up --build
-
-# 4. Access the dashboard
-open http://localhost          # via nginx
-open http://localhost:5173     # direct Vite dev server
-open http://localhost:8000/docs  # FastAPI Swagger UI
+docker compose up -d
 ```
 
----
-
-## Local Development (no Docker)
-
-### Backend
+### 2. Backend
 ```bash
 cd backend
-python -m venv venv && venv\Scripts\activate    # Windows
+venv\Scripts\activate          # venv already created
 pip install -r requirements.txt
-cp .env-example .env                    # edit DATABASE_URL, SECRET_KEY
-alembic upgrade head             # run migrations
+alembic upgrade head           # creates all tables
 uvicorn app.main:socket_app --reload --port 8000
 ```
 
-### Frontend
+### 3. Create first superadmin user
+```bash
+python -c "
+from app.db import SessionLocal
+from app.models.user import User, UserRole
+from app.auth import hash_password
+db = SessionLocal()
+u = User(username='admin', full_name='Admin', email='admin@tunispark.tn',
+         hashed_password=hash_password('admin123'), role=UserRole.superadmin, active=True)
+db.add(u); db.commit(); print('Done')
+"
+```
+
+### 4. Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
+# → http://localhost:5173
 ```
 
-### Vision pipeline
-```bash
-cd vision
-python -m venv venv && venv\Scripts\activate
-pip install -r requirements.txt
-# Set stream source (0 = webcam, or RTSP URL):
-set STREAM_SOURCE=0             # Windows
-python main.py
+### 5. API docs
+```
+http://localhost:8000/docs
 ```
 
 ---
 
-## AI Assistant Setup
+## AI Assistant Setup (RAG)
 
-The assistant uses Ollama + Mistral + FAISS RAG:
+Ollama with Mistral is already installed locally.
 
 ```bash
-# 1. Install Ollama: https://ollama.ai
-ollama pull mistral
+# 1. Add regulation PDFs to knowledge_base/
 
-# 2. Add PDFs (regulations, tariffs, rules) to:
-knowledge_base/
-
-# 3. Build the FAISS index:
+# 2. Build FAISS index from backend venv
 cd backend
 python -m app.ai.embedder
 ```
+
+The assistant is then live at the `/assistant` page and `POST /api/assistant/chat`.
+
+---
+
+## Vision Pipeline
+
+```bash
+cd vision
+venv\Scripts\activate
+pip install -r requirements.txt
+set GATE_ID=gate_01
+set STREAM_SOURCE=0       # 0 = webcam, or rtsp://...
+python main.py
+```
+
+Requires `vision/models/plate_detector.pt`. For demo, set `PLATE_MODEL_PATH=yolov8n.pt` to use the generic COCO model.
 
 ---
 
@@ -91,38 +99,45 @@ python -m app.ai.embedder
 
 ```bash
 cd training
-python -m venv venv && venv\Scripts\activate
+venv\Scripts\activate
 pip install -r requirements.txt
 
-# 1. Augment labeled dataset
+# Augment labeled data
 python augment.py --input data/labeled --output data/augmented --count 5
 
-# 2. Train detector (requires GPU recommended)
+# Train plate detector
 python train_detector.py --epochs 100 --batch 16
 
-# 3. Evaluate
+# Evaluate
 python evaluate.py --mode detector --model models/plate_detector.pt --data plates.yaml
 python evaluate.py --mode ocr --images data/ocr/test/images --labels data/ocr/test/labels
 ```
 
 ---
 
-## Default Credentials
+## Default Login
 
-| Role       | Username | Password   |
-|------------|----------|------------|
-| Superadmin | admin    | admin123   |
+| Username | Password | Role |
+|----------|----------|------|
+| admin | admin123 | superadmin |
 
-> **Change passwords immediately in production via Admin → User Management.**
+> Change via Admin → User Management after first login.
 
 ---
 
 ## Tech Stack
 
-| Layer     | Technology |
-|-----------|------------|
-| Frontend  | React 19, Vite 8, TypeScript, Tailwind CSS v4, shadcn/ui, Zustand, Recharts, Socket.IO |
-| Backend   | FastAPI, SQLAlchemy 2, Alembic, PostgreSQL, Redis, Celery |
-| AI / RAG  | LangChain 0.3, FAISS-cpu, sentence-transformers, Ollama (Mistral) |
-| Vision    | YOLOv8 (ultralytics), EasyOCR, DeepSORT, OpenCV |
-| Infra     | Docker Compose, Nginx, Ollama |
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 19, Vite 8, TypeScript, Tailwind CSS v4, shadcn/ui, Zustand, Recharts, Socket.IO |
+| Backend | FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 16, Redis 7, JWT, bcrypt |
+| AI / RAG | LangChain 0.3, FAISS-cpu, sentence-transformers, Ollama (Mistral 7B — local) |
+| Vision | YOLOv8 (ultralytics), EasyOCR, DeepSORT, OpenCV |
+| Infra | Docker Compose (postgres + redis), local Ollama |
+
+---
+
+## Implementation Status
+
+See [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md) for a detailed breakdown of every component, what's working, and what's pending.
+

@@ -18,6 +18,7 @@ celery==5.4.0
 
 # Auth
 python-jose[cryptography]==3.3.0
+bcrypt==4.3.0
 passlib[bcrypt]==1.7.4
 
 # Validation & config
