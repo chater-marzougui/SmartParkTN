@@ -12,8 +12,17 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Settings, Zap, DoorOpen, Bell, Bot, Database, Code2, Plus, Pencil, Trash2 } from "lucide-react";
+import { Settings, Zap, DoorOpen, Bell, Bot, Database, Code2, Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
+
+/** Save multiple rules in parallel */
+async function saveRules(map: Record<string, unknown>) {
+  await Promise.all(Object.entries(map).map(([k, v]) => rulesApi.update(k, v)));
+}
+
+function rv(rules: Rule[], key: string, def: unknown) {
+  return rules.find(r => r.key === key)?.value ?? def;
+}
 
 function AccessRulesTab({ rules }: { rules: Rule[] }) {
   const [local, setLocal] = useState<Record<string, unknown>>({});
@@ -167,35 +176,141 @@ function TariffBuilderTab() {
   );
 }
 
-function RuleEditorTab({ rules }: { rules: Rule[] }) {
+function RuleEditorTab({ rules, onSaved }: { rules: Rule[]; onSaved: () => void }) {
   const [json, setJson] = useState(JSON.stringify(
     Object.fromEntries(rules.map(r => [r.key, r.value])), null, 2
   ));
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const save = async () => {
+    setSaving(true); setError("");
     try {
-      JSON.parse(json);
-      // TODO: bulk update endpoint
-      toast.success("Rules JSON validated and saved");
-      setError("");
-    } catch { setError("Invalid JSON — please fix syntax errors."); }
+      const parsed = JSON.parse(json);
+      await saveRules(parsed);
+      toast.success(`${Object.keys(parsed).length} rules saved`);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof SyntaxError ? "Invalid JSON — fix syntax errors." : "Failed to save rules.");
+    } finally { setSaving(false); }
   };
 
   return (
     <div className="space-y-4 max-w-3xl">
-      <CardDescription>Advanced JSON rule editor. Changes are validated before saving. All rules are applied immediately without redeployment.</CardDescription>
+      <CardDescription>Advanced JSON rule editor. Changes are validated and saved key-by-key. All rules are applied immediately without redeployment.</CardDescription>
       <Textarea className="font-mono text-sm h-96" value={json} onChange={e => setJson(e.target.value)} />
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button onClick={save}>Validate & Save</Button>
+      <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Validate & Save"}</Button>
     </div>
   );
 }
 
 export default function AdminPanel() {
   const [rules, setRules] = useState<Rule[]>([]);
+  const reload = () => rulesApi.list().then(r => setRules(r.data)).catch(() => {});
+  useEffect(() => { reload(); }, []);
 
-  useEffect(() => { rulesApi.list().then(r => setRules(r.data)).catch(() => {}); }, []);
+  // ── Gates state ──────────────────────────────────────────────────────────
+  const gates = [
+    { id: "a", label: "Gate A — Entry" },
+    { id: "b", label: "Gate B — Exit" },
+    { id: "c", label: "Gate C — Both" },
+  ];
+  const initGates = () => Object.fromEntries(
+    gates.flatMap(g => [
+      [`gate.${g.id}.rtsp`,  String(rv(rules, `gate.${g.id}.rtsp`,  ""))],
+      [`gate.${g.id}.delay`, String(rv(rules, `gate.${g.id}.delay`, "5"))],
+      [`gate.${g.id}.fail`,  String(rv(rules, `gate.${g.id}.fail`,  "open"))],
+    ])
+  );
+  const [gateState, setGateState] = useState<Record<string, string>>(initGates);
+  useEffect(() => { setGateState(initGates()); }, [rules]); // eslint-disable-line
+
+  const saveGate = async (gateId: string) => {
+    try {
+      await saveRules({
+        [`gate.${gateId}.rtsp`]:  gateState[`gate.${gateId}.rtsp`],
+        [`gate.${gateId}.delay`]: Number(gateState[`gate.${gateId}.delay`]),
+        [`gate.${gateId}.fail`]:  gateState[`gate.${gateId}.fail`],
+      });
+      toast.success("Gate settings saved"); reload();
+    } catch { toast.error("Failed to save gate settings"); }
+  };
+
+  // ── Alert config state ────────────────────────────────────────────────────
+  const [alertSwitches, setAlertSwitches] = useState({
+    "alert.duplicate_plate": Boolean(rv(rules, "alert.duplicate_plate", true)),
+    "alert.low_confidence":  Boolean(rv(rules, "alert.low_confidence",  true)),
+    "alert.revenue_anomaly": Boolean(rv(rules, "alert.revenue_anomaly", true)),
+  });
+  const [overstayHours, setOverstayHours] = useState(String(rv(rules, "alert.overstay_hours", 24)));
+  const [recipients, setRecipients]       = useState(String(rv(rules, "alert.recipients", "")));
+  useEffect(() => {
+    setAlertSwitches({
+      "alert.duplicate_plate": Boolean(rv(rules, "alert.duplicate_plate", true)),
+      "alert.low_confidence":  Boolean(rv(rules, "alert.low_confidence",  true)),
+      "alert.revenue_anomaly": Boolean(rv(rules, "alert.revenue_anomaly", true)),
+    });
+    setOverstayHours(String(rv(rules, "alert.overstay_hours", 24)));
+    setRecipients(String(rv(rules, "alert.recipients", "")));
+  }, [rules]);
+
+  const saveAlertConfig = async () => {
+    try {
+      await saveRules({ ...alertSwitches, "alert.overstay_hours": Number(overstayHours), "alert.recipients": recipients });
+      toast.success("Alert settings saved"); reload();
+    } catch { toast.error("Failed to save"); }
+  };
+
+  // ── AI settings state ─────────────────────────────────────────────────────
+  const [aiTemp,      setAiTemp]      = useState(Number(rv(rules,  "ai.temperature", 0.3)));
+  const [aiLang,      setAiLang]      = useState(String(rv(rules,  "ai.language", "fr")));
+  const [aiCitations, setAiCitations] = useState(Boolean(rv(rules, "ai.citations", true)));
+  useEffect(() => {
+    setAiTemp(Number(rv(rules, "ai.temperature", 0.3)));
+    setAiLang(String(rv(rules, "ai.language", "fr")));
+    setAiCitations(Boolean(rv(rules, "ai.citations", true)));
+  }, [rules]);
+
+  const saveAi = async () => {
+    try {
+      await saveRules({ "ai.temperature": aiTemp, "ai.language": aiLang, "ai.citations": aiCitations });
+      toast.success("AI settings saved"); reload();
+    } catch { toast.error("Failed to save"); }
+  };
+
+  // ── System settings state ─────────────────────────────────────────────────
+  const [sys, setSys] = useState({
+    "system.name":               String(rv(rules, "system.name",               "TunisPark AI")),
+    "system.capacity":           String(rv(rules, "system.capacity",           "200")),
+    "system.timezone":           String(rv(rules, "system.timezone",           "Africa/Tunis")),
+    "system.currency":           String(rv(rules, "system.currency",           "TND")),
+    "system.session_timeout":    String(rv(rules, "system.session_timeout",    "30")),
+    "system.snapshot_retention": String(rv(rules, "system.snapshot_retention", "30")),
+    "system.backup_cron":        String(rv(rules, "system.backup_cron",        "0 2 * * *")),
+  });
+  useEffect(() => {
+    setSys({
+      "system.name":               String(rv(rules, "system.name",               "TunisPark AI")),
+      "system.capacity":           String(rv(rules, "system.capacity",           "200")),
+      "system.timezone":           String(rv(rules, "system.timezone",           "Africa/Tunis")),
+      "system.currency":           String(rv(rules, "system.currency",           "TND")),
+      "system.session_timeout":    String(rv(rules, "system.session_timeout",    "30")),
+      "system.snapshot_retention": String(rv(rules, "system.snapshot_retention", "30")),
+      "system.backup_cron":        String(rv(rules, "system.backup_cron",        "0 2 * * *")),
+    });
+  }, [rules]);
+
+  const saveSys = async () => {
+    try {
+      await saveRules(Object.fromEntries(
+        Object.entries(sys).map(([k, v]) => [k, k === "system.name" || k === "system.timezone" || k === "system.currency" || k === "system.backup_cron" ? v : Number(v)])
+      ));
+      toast.success("System settings saved"); reload();
+    } catch { toast.error("Failed to save"); }
+  };
+  const sf = (k: string) => sys[k as keyof typeof sys];
+  const ss = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setSys(s => ({ ...s, [k]: e.target.value }));
 
   return (
     <div className="p-6 space-y-6">
@@ -216,71 +331,106 @@ export default function AdminPanel() {
         </TabsList>
 
         <TabsContent value="access" className="pt-4"><AccessRulesTab rules={rules} /></TabsContent>
-
         <TabsContent value="tariffs" className="pt-4"><TariffBuilderTab /></TabsContent>
 
+        {/* Gates */}
         <TabsContent value="gates" className="pt-4">
-          <div className="text-sm text-muted-foreground">Gate configuration — connect to /api/rules for gate settings.</div>
-          <div className="mt-4 space-y-4 max-w-2xl">
-            {["Gate A — Entry", "Gate B — Exit", "Gate C — Both"].map((name) => (
-              <Card key={name}>
-                <CardHeader><CardTitle className="text-sm">{name}</CardTitle></CardHeader>
+          <div className="space-y-4 max-w-2xl">
+            {gates.map(g => (
+              <Card key={g.id}>
+                <CardHeader><CardTitle className="text-sm">{g.label}</CardTitle></CardHeader>
                 <CardContent className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2"><Label>Camera RTSP URL</Label><Input placeholder="rtsp://192.168.1.10/stream" /></div>
-                  <div className="space-y-2"><Label>Auto-open Delay (sec)</Label><Input type="number" defaultValue={5} /></div>
-                  <div className="space-y-2"><Label>Fail Mode</Label><Select defaultValue="open"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Fail-Open</SelectItem><SelectItem value="closed">Fail-Closed</SelectItem></SelectContent></Select></div>
-                  <div className="flex items-end pb-0.5"><Button size="sm" className="w-full">Save Gate</Button></div>
+                  <div className="space-y-2"><Label>Camera RTSP URL</Label>
+                    <Input placeholder="rtsp://192.168.1.10/stream" value={gateState[`gate.${g.id}.rtsp`]} onChange={e => setGateState(s => ({ ...s, [`gate.${g.id}.rtsp`]: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2"><Label>Auto-open Delay (sec)</Label>
+                    <Input type="number" value={gateState[`gate.${g.id}.delay`]} onChange={e => setGateState(s => ({ ...s, [`gate.${g.id}.delay`]: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2"><Label>Fail Mode</Label>
+                    <Select value={gateState[`gate.${g.id}.fail`]} onValueChange={v => setGateState(s => ({ ...s, [`gate.${g.id}.fail`]: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="open">Fail-Open</SelectItem><SelectItem value="closed">Fail-Closed</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end pb-0.5"><Button size="sm" className="w-full" onClick={() => saveGate(g.id)}>Save Gate</Button></div>
                 </CardContent>
               </Card>
             ))}
           </div>
         </TabsContent>
 
+        {/* Alert config */}
         <TabsContent value="alerts" className="pt-4">
           <div className="space-y-4 max-w-2xl">
-            {[
-              { key: "Duplicate Plate Detection", desc: "Alert if same plate at 2 gates within 2 minutes" },
-              { key: "Low Confidence Auto-Flag",  desc: "Flag events below confidence threshold for review" },
-              { key: "Revenue Anomaly Alert",     desc: "Alert if daily revenue drops > 40% vs last week" },
-            ].map(({ key, desc }) => (
+            {([
+              ["alert.duplicate_plate", "Duplicate Plate Detection", "Alert if same plate at 2 gates within 2 minutes"],
+              ["alert.low_confidence",  "Low Confidence Auto-Flag",  "Flag events below confidence threshold for review"],
+              ["alert.revenue_anomaly", "Revenue Anomaly Alert",     "Alert if daily revenue drops > 40% vs last week"],
+            ] as [keyof typeof alertSwitches, string, string][]).map(([key, label, desc]) => (
               <div key={key} className="flex items-center justify-between border rounded-lg p-4">
-                <div><p className="font-medium text-sm">{key}</p><p className="text-xs text-muted-foreground">{desc}</p></div>
-                <Switch defaultChecked />
+                <div><p className="font-medium text-sm">{label}</p><p className="text-xs text-muted-foreground">{desc}</p></div>
+                <Switch checked={alertSwitches[key]} onCheckedChange={v => setAlertSwitches(s => ({ ...s, [key]: v }))} />
               </div>
             ))}
-            <div className="space-y-2"><Label>Overstay Alert Threshold (hours)</Label><Input type="number" defaultValue={24} /></div>
-            <div className="space-y-2"><Label>Alert Recipients (email, one per line)</Label><Textarea placeholder="admin@example.com&#10;security@example.com" rows={3} /></div>
-            <Button>Save Alert Settings</Button>
+            <div className="space-y-2"><Label>Overstay Alert Threshold (hours)</Label>
+              <Input type="number" value={overstayHours} onChange={e => setOverstayHours(e.target.value)} />
+            </div>
+            <div className="space-y-2"><Label>Alert Recipients (email, one per line)</Label>
+              <Textarea value={recipients} onChange={e => setRecipients(e.target.value)} placeholder={"admin@example.com\nsecurity@example.com"} rows={3} />
+            </div>
+            <Button onClick={saveAlertConfig}>Save Alert Settings</Button>
           </div>
         </TabsContent>
 
+        {/* AI settings */}
         <TabsContent value="ai" className="pt-4">
           <div className="space-y-4 max-w-2xl">
             <div className="space-y-2"><Label>Knowledge Base Documents</Label><Input type="file" accept=".pdf" multiple /></div>
             <Button variant="outline">Re-embed Knowledge Base</Button>
-            <div className="space-y-2"><Label>LLM Temperature: 0.3</Label><Slider min={0} max={1} step={0.1} defaultValue={[0.3]} /></div>
-            <div className="space-y-2"><Label>Response Language</Label><Select defaultValue="fr"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fr">French</SelectItem><SelectItem value="ar">Arabic</SelectItem><SelectItem value="en">English</SelectItem></SelectContent></Select></div>
-            <div className="flex items-center gap-3"><Switch defaultChecked /><Label>Show Source Citations</Label></div>
-            <Button>Save AI Settings</Button>
+            <div className="space-y-2">
+              <Label>LLM Temperature: {aiTemp}</Label>
+              <Slider min={0} max={1} step={0.1} value={[aiTemp]} onValueChange={([v]) => setAiTemp(v)} />
+            </div>
+            <div className="space-y-2"><Label>Response Language</Label>
+              <Select value={aiLang} onValueChange={setAiLang}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fr">French</SelectItem>
+                  <SelectItem value="ar">Arabic</SelectItem>
+                  <SelectItem value="en">English</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3"><Switch checked={aiCitations} onCheckedChange={setAiCitations} /><Label>Show Source Citations</Label></div>
+            <Button onClick={saveAi}>Save AI Settings</Button>
           </div>
         </TabsContent>
 
+        {/* System settings */}
         <TabsContent value="system" className="pt-4">
           <div className="space-y-4 max-w-2xl">
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Parking Name</Label><Input defaultValue="TunisPark AI" /></div>
-              <div className="space-y-2"><Label>Total Capacity</Label><Input type="number" defaultValue={200} /></div>
-              <div className="space-y-2"><Label>Timezone</Label><Select defaultValue="Africa/Tunis"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Africa/Tunis">Africa/Tunis (UTC+1)</SelectItem><SelectItem value="UTC">UTC</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Currency</Label><Input defaultValue="TND" /></div>
-              <div className="space-y-2"><Label>Session Timeout (min)</Label><Input type="number" defaultValue={30} /></div>
-              <div className="space-y-2"><Label>Snapshot Retention (days)</Label><Input type="number" defaultValue={30} /></div>
+              <div className="space-y-2"><Label>Parking Name</Label><Input value={sf("system.name")} onChange={ss("system.name")} /></div>
+              <div className="space-y-2"><Label>Total Capacity</Label><Input type="number" value={sf("system.capacity")} onChange={ss("system.capacity")} /></div>
+              <div className="space-y-2"><Label>Timezone</Label>
+                <Select value={sf("system.timezone")} onValueChange={v => setSys(s => ({ ...s, "system.timezone": v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Africa/Tunis">Africa/Tunis (UTC+1)</SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Currency</Label><Input value={sf("system.currency")} onChange={ss("system.currency")} /></div>
+              <div className="space-y-2"><Label>Session Timeout (min)</Label><Input type="number" value={sf("system.session_timeout")} onChange={ss("system.session_timeout")} /></div>
+              <div className="space-y-2"><Label>Snapshot Retention (days)</Label><Input type="number" value={sf("system.snapshot_retention")} onChange={ss("system.snapshot_retention")} /></div>
             </div>
-            <div className="space-y-2"><Label>Database Backup Schedule (cron)</Label><Input defaultValue="0 2 * * *" /></div>
-            <Button>Save System Settings</Button>
+            <div className="space-y-2"><Label>Database Backup Schedule (cron)</Label><Input value={sf("system.backup_cron")} onChange={ss("system.backup_cron")} /></div>
+            <Button onClick={saveSys}>Save System Settings</Button>
           </div>
         </TabsContent>
 
-        <TabsContent value="editor" className="pt-4"><RuleEditorTab rules={rules} /></TabsContent>
+        <TabsContent value="editor" className="pt-4"><RuleEditorTab rules={rules} onSaved={reload} /></TabsContent>
       </Tabs>
     </div>
   );

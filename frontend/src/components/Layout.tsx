@@ -4,7 +4,7 @@ import { useAuthStore } from "../store/authStore";
 import { useDashboardStore } from "../store/dashboardStore";
 import {
   LayoutDashboard, Car, Clock, History, List, Bot, BarChart2,
-  Bell, Shield, LogOut, Wifi, WifiOff, ChevronRight,
+  Bell, Shield, LogOut, Wifi, WifiOff,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
