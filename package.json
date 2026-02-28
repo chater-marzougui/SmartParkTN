@@ -1,0 +1,25 @@
+{
+  "name": "smartparktn",
+  "version": "1.0.0",
+  "description": "Starter for all apps in current project",
+  "main": "index.js",
+  "scripts": {
+    "start:backend": "cd backend && venv\\Scripts\\activate && uvicorn main:app",
+    "start:frontend": "cd frontend && npm start",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "install:backend": "cd backend && python -m venv venv && venv\\Scripts\\activate && pip install -r requirements.txt",
+    "install:frontend": "cd frontend && npm install",
+    "install": "npm run install:backend && npm run install:frontend"
+
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chater-marzougui/SmartParkTN.git"
+  },
+  "author": "Chater Marzougui - Sup'erSonic",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/chater-marzougui/SmartParkTN/issues"
+  },
+  "homepage": "https://github.com/chater-marzougui/SmartParkTN#readme"
+}
