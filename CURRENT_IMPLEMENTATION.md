@@ -1,4 +1,4 @@
-# TunisPark AI — Current Implementation Status
+﻿# TunisPark AI — Current Implementation Status
 > Last updated: February 28, 2026
 
 ---
@@ -30,6 +30,8 @@ docker compose up -d
 | `app/auth.py` | ✅ JWT, bcrypt, `get_current_user`, `require_roles()` |
 | `alembic/env.py` | ✅ Auto-loads `.env`, uses `create_engine` (not `engine_from_config`) |
 | `alembic.ini` | ✅ Plain placeholder URL, overridden at runtime |
+| `init_admin.py` | ✅ Creates default superadmin user (username: `admin`, password: `admin123`) |
+| `seed_data.py` | ✅ Populates DB with mock vehicles, sessions, events, tariffs, alerts for testing |
 
 ### Models (8 tables created in DB)
 | Model | Status |
@@ -74,7 +76,6 @@ docker compose up -d
 | `app/ai/chat_handler.py` | ✅ Context builder + Ollama HTTP call (Mistral) |
 
 ### Known Gaps
-- ⚠️ **No seeded superadmin user** — need to INSERT one manually or add a seed script
 - ⚠️ **Celery tasks not wired** — `app/celery_app.py` module referenced in docker-compose but not created; overstay/revenue checks not running
 - ⚠️ **Knowledge base empty** — add PDFs to `knowledge_base/` then run `python -m app.ai.embedder`
 
@@ -124,9 +125,9 @@ npm run dev
 
 ---
 
-## 🟡 Vision Pipeline — CODE COMPLETE, UNTRAINED
+## � Vision Pipeline — CODE COMPLETE, MODEL TRAINED
 
-All code written and structured. Requires model weights to run.
+All code written. YOLOv8 plate detector trained and deployed to `vision/models/plate_detector.pt`. OCR engine uses pre-trained EasyOCR (Arabic + English).
 
 | File | Status |
 |------|--------|
@@ -139,9 +140,9 @@ All code written and structured. Requires model weights to run.
 | `event_poster.py` | ✅ Redis-debounced HTTP POST |
 | `main.py` | ✅ Full pipeline entry point |
 
-**Blockers:**
-- ⚠️ `models/plate_detector.pt` — not yet trained (use generic YOLOv8n.pt for prototype demo)
-- ⚠️ Vision venv packages not yet installed
+**Remaining:**
+- ⚠️ Vision venv packages not yet installed — run `pip install -r requirements.txt`
+- ⚠️ OCR fine-tuning pending — currently using base EasyOCR
 
 **Run vision (with webcam, no custom model):**
 ```bash
@@ -154,18 +155,30 @@ python main.py
 
 ---
 
-## 🟡 Training — SCAFFOLDED, NO DATA YET
+## � Training — DETECTOR COMPLETE
 
 | File | Status |
 |------|--------|
+| `download_hf_data.py` | ✅ Downloads `keremberke/license-plate-object-detection` from HuggingFace, converts COCO → YOLO |
 | `augment.py` | ✅ Albumentations pipeline for YOLO datasets |
-| `train_detector.py` | ✅ YOLOv8 training with best.pt export |
+| `train_detector.py` | ✅ YOLOv8n fine-tune, auto GPU detection, best.pt export |
 | `train_ocr.py` | ✅ EasyOCR fine-tuning scaffold |
 | `evaluate.py` | ✅ mAP (detector) + CER/exact-match (OCR) |
 | `plates.yaml` | ✅ YOLO dataset config |
-| `data/labeled/` | ⚠️ Empty — needs labeled plate images |
-| `data/raw/` | ⚠️ Empty — needs raw plate photos |
-| `data/ocr/` | ⚠️ Empty — needs plate crop + text pairs |
+| `data/labeled/` | ✅ 6176 images (train/val/test) from HuggingFace, YOLO-formatted |
+| `models/plate_detector.pt` | ✅ Trained — deployed to `vision/models/plate_detector.pt` |
+| `data/ocr/` | ⚠️ Empty — needs plate crop + text pairs for OCR fine-tuning |
+
+**Training results (YOLOv8n, 25 epochs, GTX 1660 Ti, dataset: keremberke/license-plate-object-detection):**
+
+| Metric | Score |
+|--------|-------|
+| Precision | **99.1%** |
+| Recall | **94.3%** |
+| mAP@0.50 | **97.3%** |
+| mAP@[0.50:0.95] | **70.1%** |
+
+> Early stopping at epoch 25/50 (patience=15). Best checkpoint saved automatically.
 
 ---
 
@@ -173,12 +186,10 @@ python main.py
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| Superadmin seed | 🔴 High | Block: can't log in without first user |
 | `app/celery_app.py` | 🟡 Medium | Overstay + revenue anomaly background tasks |
 | Celery periodic tasks | 🟡 Medium | Overstay check (30min), revenue check (daily) |
 | Knowledge base PDFs | 🟡 Medium | Required for RAG assistant to work |
-| Vision model weights | 🟡 Medium | `plate_detector.pt` from training |
-| Training dataset | 🟡 Medium | Labeled plate images |
+| OCR training data | 🟡 Medium | Plate crop + text pairs needed for EasyOCR fine-tuning |
 | Gate hardware integration | 🔵 Low | GPIO/relay signal for physical barrier |
 | Payment gateway | 🔵 Low | Billing currently logged, not collected |
 
@@ -186,19 +197,12 @@ python main.py
 
 ## Immediate Next Steps
 
-### Step 1 — Create superadmin user (required to log in)
+### Step 1 — Initialize database (superadmin + seed data)
 ```bash
 cd backend
 venv\Scripts\activate
-python -c "
-from app.db import SessionLocal
-from app.models.user import User, UserRole
-from app.auth import hash_password
-db = SessionLocal()
-user = User(username='admin', full_name='Admin', email='admin@tunispark.tn',
-            hashed_password=hash_password('admin123'), role=UserRole.superadmin, active=True)
-db.add(user); db.commit(); print('Superadmin created')
-"
+python init_admin.py   # creates admin / admin123 superadmin
+python seed_data.py    # populates mock vehicles, sessions, events, tariffs, alerts
 ```
 
 ### Step 2 — Add Celery app module
@@ -210,14 +214,16 @@ Place parking regulation PDFs in `knowledge_base/`, then:
 cd backend && python -m app.ai.embedder
 ```
 
-### Step 4 — Collect plate images and train detector
-- Collect 500+ Tunisian plate photos
-- Label with [LabelImg](https://github.com/heartexlabs/labelImg) in YOLO format
-- Run `python augment.py` then `python train_detector.py`
+### Step 4 — Install vision pipeline dependencies
+Detector weights are ready at `vision/models/plate_detector.pt`.
+```bash
+cd vision
+venv\Scripts\activate
+pip install -r requirements.txt
+```
 
 ### Step 5 — End-to-end demo test
 With backend + frontend running locally and postgres/redis in Docker:
 1. Open `http://localhost:5173`
-2. Log in as admin
-3. POST a test plate event via `/api/vision/plate-event`
+2. Log in as \dmin\ / \dmin123\n3. POST a test plate event via `/api/vision/plate-event`
 4. Watch dashboard update in real time via Socket.IO

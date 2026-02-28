@@ -36,17 +36,13 @@ alembic upgrade head           # creates all tables
 uvicorn app.main:socket_app --reload --port 8000
 ```
 
-### 3. Create first superadmin user
+### 3. Initialize Database (Admin & Seed Data)
+We have utility scripts to quickly set up a Super Admin and populate the system with mock entities (cameras, sessions, events) for testing.
+
 ```bash
-python -c "
-from app.db import SessionLocal
-from app.models.user import User, UserRole
-from app.auth import hash_password
-db = SessionLocal()
-u = User(username='admin', full_name='Admin', email='admin@tunispark.tn',
-         hashed_password=hash_password('admin123'), role=UserRole.superadmin, active=True)
-db.add(u); db.commit(); print('Done')
-"
+cd backend
+python init_admin.py  # Creates the superadmin user
+python seed_data.py   # Populates the database with test data
 ```
 
 ### 4. Frontend
@@ -91,7 +87,7 @@ set STREAM_SOURCE=0       # 0 = webcam, or rtsp://...
 python main.py
 ```
 
-Requires `vision/models/plate_detector.pt`. For demo, set `PLATE_MODEL_PATH=yolov8n.pt` to use the generic COCO model.
+Requires `vision/models/plate_detector.pt`. The trained model is already available at `vision/models/plate_detector.pt` (trained on `keremberke/license-plate-object-detection`, mAP@50 = 97.3%).
 
 ---
 
@@ -102,16 +98,48 @@ cd training
 venv\Scripts\activate
 pip install -r requirements.txt
 
+# Fetch dataset and format to YOLO
+python download_hf_data.py
+
 # Augment labeled data
-python augment.py --input data/labeled --output data/augmented --count 5
+python augment.py --input data/labeled --output data/augmented --count 5        
 
 # Train plate detector
-python train_detector.py --epochs 100 --batch 16
+python train_detector.py --epochs 50 --batch 16 --imgsz 640
 
 # Evaluate
 python evaluate.py --mode detector --model models/plate_detector.pt --data plates.yaml
 python evaluate.py --mode ocr --images data/ocr/test/images --labels data/ocr/test/labels
 ```
+
+---
+
+## Training Results
+
+YOLOv8n fine-tuned on `keremberke/license-plate-object-detection` (6176 images) — 25 epochs on NVIDIA GTX 1660 Ti.
+
+| Metric | Score |
+|--------|-------|
+| Precision | **99.1%** |
+| Recall | **94.3%** |
+| mAP@0.50 | **97.3%** |
+| mAP@[0.50:0.95] | **70.1%** |
+
+**Training curves**
+
+![Training Results](docs/training/results.png)
+
+**F1 Confidence Curve**
+
+![F1 Curve](docs/training/BoxF1_curve.png)
+
+**Validation Predictions (sample)**
+
+![Val Predictions](docs/training/val_batch0_pred.jpg)
+
+**Confusion Matrix**
+
+![Confusion Matrix](docs/training/confusion_matrix_normalized.png)
 
 ---
 

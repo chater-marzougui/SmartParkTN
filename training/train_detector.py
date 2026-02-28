@@ -23,6 +23,10 @@ def train(
     print(f"Training YOLOv8 plate detector")
     print(f"  base: {base_model}  epochs: {epochs}  batch: {batch}  imgsz: {imgsz}")
 
+    import torch
+    device = 0 if torch.cuda.is_available() else "cpu"
+    print(f"  device: {'cuda:0 (' + torch.cuda.get_device_name(0) + ')' if device == 0 else 'cpu'}")
+
     model = YOLO(base_model)
     results = model.train(
         data=data_yaml,
@@ -33,7 +37,7 @@ def train(
         name=name,
         patience=15,
         save=True,
-        device=0 if os.environ.get("CUDA_VISIBLE_DEVICES") else "cpu",
+        device=device,
         workers=4,
         cache=True,
         augment=True,
@@ -57,9 +61,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", default="plates.yaml")
     parser.add_argument("--base", default="yolov8n.pt")
-    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--batch", type=int, default=16)
-    parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--imgsz", type=int, default=320)
     parser.add_argument("--name", default="plate_detector")
     args = parser.parse_args()
     train(args.data, args.base, args.epochs, args.batch, args.imgsz, name=args.name)
